@@ -1,0 +1,30 @@
+name:                cabal-list-sources
+version:             0.1.0.0
+synopsis:            Print source & data files referenced from a Cabal file.
+description:         Printed paths are relative to the Cabal file.
+                     Example usage: in Git pre-commit hook, check that all
+                     required files are being committed.
+homepage:            https://github.com/PlushBeaver/cabal-list-sources
+license:             BSD3
+license-file:        LICENSE
+author:              Dmitry Kozlyuk
+maintainer:          Dmitry.Kozliuk@gmail.com
+copyright:           2017 Dmitry Kozlyuk
+category:            Web
+build-type:          Simple
+extra-source-files:  README.md
+cabal-version:       >=1.10
+
+executable cabal-list-sources
+  hs-source-dirs:      app
+  main-is:             Main.hs
+  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
+  build-depends:       base
+                     , Cabal
+                     , directory
+                     , filepath
+  default-language:    Haskell2010
+
+source-repository head
+  type:     git
+  location: https://github.com/PlushBeaver/cabal-list-sources
