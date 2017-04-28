@@ -72,18 +72,20 @@ listCabalSources path = do
         mainPath <- locateFile dirs (Cabal.modulePath exe)
         return $ mainPath : modulePaths
 
-    let dataPaths = (Cabal.dataDir inputPackage </>) <$> Cabal.dataFiles inputPackage
+    let dataPaths = (baseDir </>) . (Cabal.dataDir inputPackage </>) <$> Cabal.dataFiles inputPackage
 
     return $ uniq $ sort $ exePaths <> libraryPaths <> dataPaths
 
     where
         locateFile :: [FilePath] -> FilePath -> IO FilePath
         locateFile possibleDirs relativePath = do
-            let possiblePath = (</> relativePath)
+            let possiblePath = (baseDir </>) . (</> relativePath)
             found <- findFirstM (System.doesFileExist . possiblePath) possibleDirs
             case found of
                 Just dir -> return $ possiblePath dir
                 Nothing -> fail $ "unable to locate: " <> relativePath
+
+        baseDir = System.takeDirectory path
 
         toFilePath moduleName =
             Cabal.toFilePath moduleName <> ".hs"
