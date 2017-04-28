@@ -69,7 +69,7 @@ listCabalSources path = do
             dirs = Cabal.hsSourceDirs info
             modules = Cabal.otherModules info
         modulePaths <- forM modules $ \moduleName -> locateFile dirs (toFilePath moduleName)
-        mainPath <- locateFile dirs (Cabal.modulePath exe)
+        mainPath <- locateFile (dirs <> ["."]) (Cabal.modulePath exe)
         return $ mainPath : modulePaths
 
     let dataPaths = (baseDir </>) . (Cabal.dataDir inputPackage </>) <$> Cabal.dataFiles inputPackage
