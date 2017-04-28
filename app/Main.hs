@@ -72,9 +72,14 @@ listCabalSources path = do
         mainPath <- locateFile (dirs <> ["."]) (Cabal.modulePath exe)
         return $ mainPath : modulePaths
 
-    let dataPaths = (baseDir </>) . (Cabal.dataDir inputPackage </>) <$> Cabal.dataFiles inputPackage
+    let dataPaths = (baseDir </>) . (Cabal.dataDir inputPackage </>) <$>
+            Cabal.dataFiles inputPackage
+        extraPaths = (baseDir </> ) <$>
+               Cabal.licenseFiles inputPackage
+            <> Cabal.extraSrcFiles inputPackage
+            <> Cabal.extraDocFiles inputPackage
 
-    return $ uniq $ sort $ exePaths <> libraryPaths <> dataPaths
+    return $ uniq $ sort $ exePaths <> libraryPaths <> dataPaths <> extraPaths
 
     where
         locateFile :: [FilePath] -> FilePath -> IO FilePath
