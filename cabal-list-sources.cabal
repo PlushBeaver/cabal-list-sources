@@ -13,6 +13,7 @@ copyright:           2017 Dmitry Kozlyuk
 category:            Web
 build-type:          Simple
 extra-source-files:  README.md
+                   , examples/pre-commit
 cabal-version:       >=1.10
 
 executable cabal-list-sources
