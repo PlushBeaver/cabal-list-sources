@@ -11,6 +11,7 @@ import System.FilePath as System
 import System.IO as System
 
 import qualified Distribution.ModuleName as Cabal
+import qualified Distribution.Package as Cabal
 import qualified Distribution.PackageDescription as Cabal
 import qualified Distribution.PackageDescription.Parse as Cabal
 import qualified Distribution.Verbosity as Cabal
@@ -50,10 +51,16 @@ listCabalSources :: FilePath -> IO [FilePath]
 listCabalSources path = do
     Input{..} <- readCabalFile path
 
+    let escapeName = map (\c -> if c == '-' then '_' else c) . Cabal.unPackageName
+        ignoredModules = Cabal.fromString <$>
+            [ "Paths_" <> (escapeName . Cabal.pkgName . Cabal.package) inputPackage
+            ]
+
     libraryPaths <- fmap concat <$> forM inputLibraries $ \library -> do
         let info = Cabal.libBuildInfo library
             dirs = Cabal.hsSourceDirs info
-            modules = Cabal.exposedModules library <> Cabal.otherModules info
+            allModules = Cabal.exposedModules library <> Cabal.otherModules info
+            modules = filter ((flip notElem) ignoredModules) allModules
         forM modules $ \moduleName ->
             locateFile dirs (toFilePath moduleName)
 
