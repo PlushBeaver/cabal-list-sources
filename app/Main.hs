@@ -32,6 +32,16 @@ data Input = Input
     deriving (Eq, Show)
 
 
+class Artifact a where
+    artifactBuildInfo :: a -> Cabal.BuildInfo
+
+    artifactDirs :: a -> [FilePath]
+    artifactDirs = Cabal.hsSourceDirs . artifactBuildInfo
+
+    artifactModules :: a -> [Cabal.ModuleName]
+    artifactModules = Cabal.otherModules . artifactBuildInfo
+
+
 main :: IO ()
 main = do
     System.getArgs >>= \args -> case args of
@@ -54,37 +64,14 @@ listCabalSources :: FilePath -> IO [FilePath]
 listCabalSources path = do
     Input{..} <- readCabalFile path
 
-    let escapeName = map (\c -> if c == '-' then '_' else c) . Cabal.unPackageName
-        ignoredModules = Cabal.fromString <$>
-            [ "Paths_" <> (escapeName . Cabal.pkgName . Cabal.package) inputPackage
-            ]
-
-    libraryPaths <- fmap concat <$> forM inputLibraries $ \library -> do
-        let info = Cabal.libBuildInfo library
-            dirs = Cabal.hsSourceDirs info
-            allModules = Cabal.exposedModules library <> Cabal.otherModules info
-            modules = filter ((flip notElem) ignoredModules) allModules
-        locateModules dirs modules
-
+    libraryPaths <- fmap concat <$> forM inputLibraries locateModules
+    testPaths <- fmap concat <$> forM inputTestSuites locateModules
+    benchmarkPaths <- fmap concat <$> forM inputBenchmarks locateModules
     exePaths <- fmap concat <$> forM inputExecutables $ \exe -> do
-        let info = Cabal.buildInfo exe
-            dirs = Cabal.hsSourceDirs info
-            modules = Cabal.otherModules info
-        modulePaths <- locateModules dirs modules
+        let dirs = (Cabal.hsSourceDirs . Cabal.buildInfo) exe
+        modulePaths <- locateModules exe
         mainPath <- locateFile (dirs <> ["."]) (Cabal.modulePath exe)
         return $ modulePaths <> maybeToList mainPath
-
-    testPaths <- fmap concat <$> forM inputTestSuites $ \test -> do
-        let info = Cabal.testBuildInfo test
-            dirs = Cabal.hsSourceDirs info
-            modules = Cabal.otherModules info
-        locateModules dirs modules
-
-    benchmarkPaths <- fmap concat <$> forM inputBenchmarks $ \benchmark -> do
-        let info = Cabal.benchmarkBuildInfo benchmark
-            dirs = Cabal.hsSourceDirs info
-            modules = Cabal.otherModules info
-        locateModules dirs modules
 
     let dataPaths = (baseDir </>) . (Cabal.dataDir inputPackage </>) <$>
             Cabal.dataFiles inputPackage
@@ -104,10 +91,12 @@ listCabalSources path = do
         in return $ uniq $ sort $ allPaths
 
     where
-        locateModules :: [FilePath] -> [Cabal.ModuleName] -> IO [FilePath]
-        locateModules possibleDirs modules =
-            let toFilePath moduleName = Cabal.toFilePath moduleName <> ".hs"
-                in catMaybes <$> mapM (locateFile possibleDirs) (toFilePath <$> modules)
+        locateModules :: Artifact artifact => artifact -> IO [FilePath]
+        locateModules artifact =
+            let dirs = artifactDirs artifact
+                modules = artifactModules artifact
+                toFilePath moduleName = Cabal.toFilePath moduleName <> ".hs"
+                in catMaybes <$> mapM (locateFile dirs) (toFilePath <$> modules)
 
         locateFile :: [FilePath] -> FilePath -> IO (Maybe FilePath)
         locateFile possibleDirs relativePath = do
@@ -129,6 +118,22 @@ listCabalSources path = do
             | otherwise = x : uniq (y:xs)
         uniq [x] = [x]
         uniq [] = []
+
+
+instance Artifact Cabal.Executable where
+    artifactBuildInfo = Cabal.buildInfo
+
+instance Artifact Cabal.Library where
+    artifactBuildInfo = Cabal.libBuildInfo
+    artifactModules library =
+        Cabal.exposedModules library <>
+        (Cabal.otherModules . artifactBuildInfo) library
+
+instance Artifact Cabal.TestSuite where
+    artifactBuildInfo = Cabal.testBuildInfo
+
+instance Artifact Cabal.Benchmark where
+    artifactBuildInfo = Cabal.benchmarkBuildInfo
 
 
 readCabalFile :: FilePath -> IO Input
