@@ -22,9 +22,11 @@ import qualified System.Exit as System
 
 
 data Input = Input
-    { inputPackage :: Cabal.PackageDescription
-    , inputLibraries :: [Cabal.Library]
-    , inputExecutables :: [Cabal.Executable]
+    { inputPackage :: !Cabal.PackageDescription
+    , inputLibraries :: ![Cabal.Library]
+    , inputExecutables :: ![Cabal.Executable]
+    , inputTestSuites :: ![Cabal.TestSuite]
+    , inputBenchmarks :: ![Cabal.Benchmark]
     }
     deriving (Eq, Show)
 
@@ -72,6 +74,20 @@ listCabalSources path = do
         mainPath <- locateFile (dirs <> ["."]) (Cabal.modulePath exe)
         return $ mainPath : modulePaths
 
+    testPaths <- fmap concat <$> forM inputTestSuites $ \test -> do
+        let info = Cabal.testBuildInfo test
+            dirs = Cabal.hsSourceDirs info
+            modules = Cabal.otherModules info
+        forM modules $ \moduleName ->
+            locateFile dirs (toFilePath moduleName)
+
+    benchmarkPaths <- fmap concat <$> forM inputBenchmarks $ \benchmark -> do
+        let info = Cabal.benchmarkBuildInfo benchmark
+            dirs = Cabal.hsSourceDirs info
+            modules = Cabal.otherModules info
+        forM modules $ \moduleName ->
+            locateFile dirs (toFilePath moduleName)
+
     let dataPaths = (baseDir </>) . (Cabal.dataDir inputPackage </>) <$>
             Cabal.dataFiles inputPackage
         extraPaths = (baseDir </> ) <$>
@@ -79,7 +95,15 @@ listCabalSources path = do
             <> Cabal.extraSrcFiles inputPackage
             <> Cabal.extraDocFiles inputPackage
 
-    return $ uniq $ sort $ exePaths <> libraryPaths <> dataPaths <> extraPaths
+    let allPaths = concat
+            [ exePaths
+            , libraryPaths
+            , dataPaths
+            , extraPaths
+            , testPaths
+            , benchmarkPaths
+            ]
+        in return $ uniq $ sort $ allPaths
 
     where
         locateFile :: [FilePath] -> FilePath -> IO FilePath
@@ -116,6 +140,8 @@ readCabalFile path = do
         { inputPackage = packageDescription
         , inputLibraries = maybe [] flatten condLibrary
         , inputExecutables = concatMap (flatten . snd) condExecutables
+        , inputTestSuites = concatMap (flatten . snd) condTestSuites
+        , inputBenchmarks = concatMap (flatten . snd) condBenchmarks
         }
     where
         flatten :: Cabal.CondTree v c a -> [a]
