@@ -1,6 +1,8 @@
-#!/bin/sh
+#!/usr/bin/env sh
 
 # Checks that all files referenced from Cabal are being committed.
+
+set -e
 
 is_tracked() {
     git ls-files $1 --modified --cached --error-unmatch 2>/dev/null >/dev/null
@@ -11,9 +13,10 @@ for cabal in `find -name '*.cabal'`; do
     if ! is_tracked "$cabal"; then
         continue
     fi
-    for file in `cabal-list-sources "$cabal"`; do
+    sources="`cabal-list-sources "$cabal"`"
+    for file in $sources; do
         if ! is_tracked "$file"; then
-            echo >&2 "$(basename $0): error: forgot to git add $file"
+            echo >&2 "`basename "$0"`: error: forgot to git add $file"
             exit_code=1
         fi
     done
