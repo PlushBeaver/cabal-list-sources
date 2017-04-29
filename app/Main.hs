@@ -5,6 +5,7 @@ module Main where
 import Control.Monad
 
 import Data.List
+import Data.Maybe
 import Data.Monoid
 
 import System.FilePath as System
@@ -63,30 +64,27 @@ listCabalSources path = do
             dirs = Cabal.hsSourceDirs info
             allModules = Cabal.exposedModules library <> Cabal.otherModules info
             modules = filter ((flip notElem) ignoredModules) allModules
-        forM modules $ \moduleName ->
-            locateFile dirs (toFilePath moduleName)
+        locateModules dirs modules
 
     exePaths <- fmap concat <$> forM inputExecutables $ \exe -> do
         let info = Cabal.buildInfo exe
             dirs = Cabal.hsSourceDirs info
             modules = Cabal.otherModules info
-        modulePaths <- forM modules $ \moduleName -> locateFile dirs (toFilePath moduleName)
+        modulePaths <- locateModules dirs modules
         mainPath <- locateFile (dirs <> ["."]) (Cabal.modulePath exe)
-        return $ mainPath : modulePaths
+        return $ modulePaths <> maybeToList mainPath
 
     testPaths <- fmap concat <$> forM inputTestSuites $ \test -> do
         let info = Cabal.testBuildInfo test
             dirs = Cabal.hsSourceDirs info
             modules = Cabal.otherModules info
-        forM modules $ \moduleName ->
-            locateFile dirs (toFilePath moduleName)
+        locateModules dirs modules
 
     benchmarkPaths <- fmap concat <$> forM inputBenchmarks $ \benchmark -> do
         let info = Cabal.benchmarkBuildInfo benchmark
             dirs = Cabal.hsSourceDirs info
             modules = Cabal.otherModules info
-        forM modules $ \moduleName ->
-            locateFile dirs (toFilePath moduleName)
+        locateModules dirs modules
 
     let dataPaths = (baseDir </>) . (Cabal.dataDir inputPackage </>) <$>
             Cabal.dataFiles inputPackage
@@ -106,18 +104,18 @@ listCabalSources path = do
         in return $ uniq $ sort $ allPaths
 
     where
-        locateFile :: [FilePath] -> FilePath -> IO FilePath
+        locateModules :: [FilePath] -> [Cabal.ModuleName] -> IO [FilePath]
+        locateModules possibleDirs modules =
+            let toFilePath moduleName = Cabal.toFilePath moduleName <> ".hs"
+                in catMaybes <$> mapM (locateFile possibleDirs) (toFilePath <$> modules)
+
+        locateFile :: [FilePath] -> FilePath -> IO (Maybe FilePath)
         locateFile possibleDirs relativePath = do
             let possiblePath = (baseDir </>) . (</> relativePath)
-            found <- findFirstM (System.doesFileExist . possiblePath) possibleDirs
-            case found of
-                Just dir -> return $ possiblePath dir
-                Nothing -> fail $ "unable to locate: " <> relativePath
+                firstFile = findFirstM (System.doesFileExist . possiblePath) possibleDirs
+                in fmap possiblePath <$> firstFile
 
         baseDir = System.takeDirectory path
-
-        toFilePath moduleName =
-            Cabal.toFilePath moduleName <> ".hs"
 
         findFirstM :: Monad m => (a -> m Bool) -> [a] -> m (Maybe a)
         findFirstM f (x:xs) =
