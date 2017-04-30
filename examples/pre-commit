@@ -13,13 +13,17 @@ for cabal in `find -name '*.cabal'`; do
     if ! is_tracked "$cabal"; then
         continue
     fi
-    sources="`cabal-list-sources "$cabal"`"
+
+    dir="`dirname $cabal`"
+    pushd "$dir" >/dev/null
+    sources="$(git cat-file blob :"`basename "$cabal"`" | cabal-list-sources)"
     for file in $sources; do
         if ! is_tracked "$file"; then
-            echo >&2 "`basename "$0"`: error: forgot to git add $file"
+            echo >&2 "`basename "$0"`: error: forgot to git add $dir/$file"
             exit_code=1
         fi
     done
+    popd >/dev/null
 done
 
 exit $exit_code
