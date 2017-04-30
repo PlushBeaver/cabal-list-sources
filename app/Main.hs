@@ -15,7 +15,6 @@ import qualified Distribution.ModuleName as Cabal
 import qualified Distribution.Package as Cabal
 import qualified Distribution.PackageDescription as Cabal
 import qualified Distribution.PackageDescription.Parse as Cabal
-import qualified Distribution.Verbosity as Cabal
 
 import qualified System.Directory as System
 import qualified System.Environment as System
@@ -45,25 +44,38 @@ class Artifact a where
 main :: IO ()
 main = do
     System.getArgs >>= \args -> case args of
-        [path] ->
-            mapM_ putStrLn =<< listCabalSources path
+        []     -> run Nothing
+        ["-"]  -> run Nothing
+        [path] -> run (Just path)
         _ ->
             printHelp >> System.exitFailure
+    where
+        run maybePath = mapM_ putStrLn =<< listCabalSources maybePath
 
 
 printHelp :: IO ()
 printHelp = do
     self <- System.getProgName
-    display $ "Print source and data file paths referenced from a Cabal file."
-    display $ "Usage: " <> self <> " CABAL_FILE"
+    display $ "Print source and data file paths referenced from a Cabal file (or from"
+    display $ "STDIN, in which case the file is assumed to be in current directory)."
+    display $ "Usage: " <> self <> " [CABAL_FILE/-]"
     where
         display = hPutStrLn System.stderr
 
 
-listCabalSources :: FilePath -> IO [FilePath]
-listCabalSources path = do
-    Input{..} <- readCabalFile path
+listCabalSources :: Maybe FilePath -> IO [FilePath]
+listCabalSources maybePath = do
+    text <- maybe System.getContents System.readFile maybePath
+    case parseCabalFile text of
+        Left error ->
+            fail error
+        Right input ->
+            let path = maybe "." id maybePath
+                in listCabalSources' path input
 
+
+listCabalSources' :: FilePath -> Input -> IO [FilePath]
+listCabalSources' path Input{..} = do
     libraryPaths <- fmap concat <$> forM inputLibraries locateModules
     testPaths <- fmap concat <$> forM inputTestSuites locateModules
     benchmarkPaths <- fmap concat <$> forM inputBenchmarks locateModules
@@ -136,16 +148,19 @@ instance Artifact Cabal.Benchmark where
     artifactBuildInfo = Cabal.benchmarkBuildInfo
 
 
-readCabalFile :: FilePath -> IO Input
-readCabalFile path = do
-    Cabal.GenericPackageDescription{..} <- Cabal.readPackageDescription Cabal.silent path
-    return $ Input
-        { inputPackage = packageDescription
-        , inputLibraries = maybe [] flatten condLibrary
-        , inputExecutables = concatMap (flatten . snd) condExecutables
-        , inputTestSuites = concatMap (flatten . snd) condTestSuites
-        , inputBenchmarks = concatMap (flatten . snd) condBenchmarks
-        }
+parseCabalFile :: String -> Either String Input
+parseCabalFile text =
+    case Cabal.parsePackageDescription text of
+        Cabal.ParseOk _ Cabal.GenericPackageDescription{..} ->
+            Right $ Input
+                { inputPackage = packageDescription
+                , inputLibraries = maybe [] flatten condLibrary
+                , inputExecutables = concatMap (flatten . snd) condExecutables
+                , inputTestSuites = concatMap (flatten . snd) condTestSuites
+                , inputBenchmarks = concatMap (flatten . snd) condBenchmarks
+                }
+        Cabal.ParseFailed error ->
+            Left $ show error
     where
         flatten :: Cabal.CondTree v c a -> [a]
         flatten Cabal.CondNode{..} =
